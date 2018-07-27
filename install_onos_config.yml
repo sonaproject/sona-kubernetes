@@ -1,0 +1,73 @@
+apiVersion: apps/v1 # for versions before 1.9.0 use apps/v1beta2
+kind: StatefulSet
+metadata:
+  name: onos-sona
+spec:
+  serviceName: "onos-sona"
+  selector:
+    matchLabels:
+      app: sona-app
+  replicas: 3 
+  template:
+    metadata:
+      labels:
+        app: sona-app
+    spec:
+      initContainers:
+        - name: noti-ip
+          image: appropriate/curl
+          command: ['sh', '-c','sleep 1; curl -X POST clusterman-service:9191/leave -d "{\"nodename\":\"$MY_POD_NAME\",\"nodeip\":\"\"}"; sleep 6; curl -X POST clusterman-service:9191/join -d "{\"nodename\":\"$MY_POD_NAME\",\"nodeip\":\"$MY_POD_IP\"}"']
+          env:
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: MY_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+      containers:
+        - name: onos-app
+          image: opensona/onos-sona-nightly-docker
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8101
+            - containerPort: 8181
+            - containerPort: 9876
+            - containerPort: 6640
+            - containerPort: 6653
+          volumeMounts:
+            - mountPath: /root/nginx-config
+              name: nginx-config
+          env:
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Dfile.encoding=UTF8 -Donos.cluster.metadata.uri=http://clusterman-service:9191/cluster.json"
+      volumes:
+        - name: onos-config
+          hostPath:
+            path: /home/ubuntu/onos-config
+            type: Directory
+        - name: nginx-config
+          hostPath:
+            path: /tmp/nginx_conf
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sona-service
+spec:
+  ports:
+  - port: 8101
+    name: karaf
+  - port: 8181
+    name: onos-rest
+  - port: 9876
+    name: cluster
+  - port: 6640
+    name: ovs
+  - port: 6653
+    name: openflow
+  selector:
+    app: sona-app
+
